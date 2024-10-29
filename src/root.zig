@@ -7,40 +7,6 @@ const napi_env = node_api.napi_env;
 const napi_callback_info = node_api.napi_callback_info;
 const napi_value = node_api.napi_value;
 
-fn add(env: napi_env, info: napi_callback_info) !napi_value {
-    var args: [2]napi_value = undefined; // must be var b/c of cast
-    var argc: usize = 2;
-
-    try node.nodeApiCall(node_api.napi_get_cb_info, .{ env, info, &argc, &args, null, null });
-
-    if (argc < 2) {
-        _ = node_api.napi_throw_type_error(env, null, "Wrong number of arguments");
-        return null;
-    }
-
-    var valuetype0: node_api.napi_valuetype = undefined;
-    try node.nodeApiCall(node_api.napi_typeof, .{ env, args[0], &valuetype0 });
-
-    var valuetype1: node_api.napi_valuetype = undefined;
-    try node.nodeApiCall(node_api.napi_typeof, .{ env, args[1], &valuetype1 });
-
-    if (valuetype0 != node_api.napi_number or valuetype1 != node_api.napi_number) {
-        _ = node_api.napi_throw_type_error(env, null, "Wrong arguments");
-        return null;
-    }
-
-    var value0: f64 = undefined;
-    try node.nodeApiCall(node_api.napi_get_value_double, .{ env, args[0], &value0 });
-
-    var value1: f64 = undefined;
-    try node.nodeApiCall(node_api.napi_get_value_double, .{ env, args[1], &value1 });
-
-    var sum: napi_value = undefined;
-    try node.nodeApiCall(node_api.napi_create_double, .{ env, value0 + value1, &sum });
-
-    return sum;
-}
-
 fn declareNapiMethod(
     name: anytype,
     func: fn (napi_env, napi_callback_info) node.NodeError!napi_value,
@@ -48,7 +14,15 @@ fn declareNapiMethod(
     const method = struct {
         fn method(e: napi_env, i: napi_callback_info) callconv(.C) napi_value {
             return func(e, i) catch |err| {
-                @panic(@errorName(err));
+                node.nodeApiCall(node_api.napi_throw_error, .{
+                    e,
+                    null,
+                    @errorName(err),
+                }) catch |unrecoverable_error| {
+                    @panic(@errorName(unrecoverable_error));
+                };
+
+                return null;
             };
         }
     }.method;
@@ -65,11 +39,21 @@ fn declareNapiMethod(
     };
 }
 
+fn add(a: f64, b: f64) f64 {
+    return a + b;
+}
+
+fn addOne(a: f64) f64 {
+    return a + 1;
+}
+
 export fn Init(env: napi_env, exports: napi_value) napi_value {
     // see: https://nodejs.org/api/n-api.html#napi_property_descriptor
     var props = [_]node_api.napi_property_descriptor{
-        declareNapiMethod("add", add),
+        declareNapiMethod("add", node.nodeCall(add)),
+        declareNapiMethod("addOne", node.nodeCall(addOne)),
     };
+
     node.nodeApiCall(node_api.napi_define_properties, .{ env, exports, props.len, &props }) catch |err| {
         @panic(@errorName(err));
     };
