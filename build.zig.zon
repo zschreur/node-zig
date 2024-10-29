@@ -23,6 +23,10 @@
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
     .dependencies = .{
+        .node = .{
+            .url = "https://nodejs.org/dist/v22.11.0/node-v22.11.0-headers.tar.gz",
+            .hash = "1220696e62b88165be59157a026ff8ee7b46be791a22ebdf85f23f0ff36b0dd67bb0",
+        },
         // See `zig fetch --save <url>` for a command-line interface for adding dependencies.
         //.example = .{
         //    // When updating this field to a new URL, be sure to delete the corresponding
