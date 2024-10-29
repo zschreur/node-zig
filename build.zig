@@ -15,6 +15,12 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    const node = b.dependency("node", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const node_headers = node.path("include/node");
+
     const lib = b.addStaticLibrary(.{
         .name = "node-zig",
         // In this case the main source file is merely a path, however, in more
@@ -24,10 +30,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    lib.addIncludePath(.{ .src_path = .{
-        .owner = b,
-        .sub_path = ".cache/node/node-v20.18.0/include/node",
-    } });
+    lib.addIncludePath(node_headers);
 
     // This declares intent for the library to be installed into the standard
     // location when the user invokes the "install" step (the default step when
@@ -42,10 +45,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    lib_unit_tests.addIncludePath(.{ .src_path = .{
-        .owner = b,
-        .sub_path = ".cache/node/node-v20.18.0/include/node",
-    } });
+    lib_unit_tests.addIncludePath(node_headers);
 
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
@@ -64,10 +64,7 @@ pub fn build(b: *std.Build) void {
     nodeAddon.linker_allow_shlib_undefined = true;
 
     nodeAddon.linkLibrary(lib);
-    nodeAddon.addIncludePath(.{ .src_path = .{
-        .owner = b,
-        .sub_path = ".cache/node/node-v20.18.0/include/node",
-    } });
+    nodeAddon.addIncludePath(node_headers);
     nodeAddon.linkLibC();
     nodeAddon.addCSourceFile(.{
         .file = .{ .src_path = .{
