@@ -44,13 +44,27 @@ pub fn build(b: *std.Build) void {
     nodeAddon.linkLibrary(lib);
     nodeAddon.addIncludePath(node_headers);
     nodeAddon.linkLibC();
-    nodeAddon.addCSourceFile(.{
-        .file = .{ .src_path = .{
-            .owner = b,
-            .sub_path = "src/addon.c",
-        } },
-        .flags = &.{ "-Wall", "-fPIC" },
-    });
+    const wf = b.addWriteFiles();
+
+    {
+        const c_file_content =
+            \\#include <node_api.h>
+            \\#include <stdio.h>
+            \\
+            \\extern napi_value Init(napi_env env, napi_value exports);
+            \\
+            \\NAPI_MODULE(
+        // Separating it like this will allow the addon to be given a unique name
+        ++ "addon" ++ 
+            \\, Init)
+        ;
+
+        const f = wf.add("addon.c", c_file_content);
+        nodeAddon.addCSourceFile(.{
+            .file = f,
+            .flags = &.{ "-Wall", "-fPIC" },
+        });
+    }
 
     b.getInstallStep()
         .dependOn(&b.addInstallArtifact(nodeAddon, .{ .dest_sub_path = "addon.node" }).step);
