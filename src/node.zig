@@ -60,11 +60,80 @@ pub fn nodeApiCall(func: anytype, args: anytype) NodeError!void {
     }
 }
 
-fn getParamSize(func: anytype) comptime_int {
-    const func_type = @typeInfo(@TypeOf(func)).@"fn";
-    var paramSize = 0;
-    for (func_type.params) |param| {
-        paramSize += if (param.type) |t| @sizeOf(t) else 0;
+const NodeFunction = fn (node_api.napi_env, node_api.napi_callback_info) NodeError!node_api.napi_value;
+
+const std = @import("std");
+const builtin = std.builtin;
+
+pub fn getValue(comptime T: type, env: node_api.napi_env, arg: node_api.napi_value) NodeError!T {
+    var res: T = undefined;
+    switch (T) {
+        f64 => {
+            try nodeApiCall(node_api.napi_get_value_double, .{ env, arg, &res });
+        },
+        i64 => {
+            try nodeApiCall(node_api.napi_get_value_int64, .{ env, arg, &res });
+        },
+        bool => {
+            try nodeApiCall(node_api.napi_get_value_bool, .{ env, arg, &res });
+        },
+        else => @compileError(@typeName(T) ++ " is not implemented for getValue"),
     }
-    return paramSize;
+    return res;
+}
+
+pub fn createValue(comptime T: type, value: T, env: node_api.napi_env) NodeError!node_api.napi_value {
+    var res: node_api.napi_value = undefined;
+    switch (T) {
+        f64 => {
+            try nodeApiCall(node_api.napi_create_double, .{ env, value, &res });
+        },
+        i64 => {
+            try nodeApiCall(node_api.napi_create_int64, .{ env, value, &res });
+        },
+        bool => {
+            try nodeApiCall(node_api.napi_get_boolean, .{ env, value, &res });
+        },
+        else => @compileError(@typeName(T) ++ " is not implemented for createValue"),
+    }
+    return res;
+}
+
+fn getFuncTypeInfo(comptime func: anytype) struct { Args: type, Return: type } {
+    const Function = @TypeOf(func);
+    const Args = std.meta.ArgsTuple(Function);
+    const Return = @typeInfo(Function).@"fn".return_type.?;
+
+    return .{ .Args = Args, .Return = Return };
+}
+
+fn genericNodeCall(comptime func: anytype, env: node_api.napi_env, info: node_api.napi_callback_info) NodeError!node_api.napi_value {
+    const func_type_info = getFuncTypeInfo(func);
+
+    const args_type_info = @typeInfo(func_type_info.Args);
+    var argc: usize = args_type_info.@"struct".fields.len;
+    var args: [args_type_info.@"struct".fields.len]node_api.napi_value = undefined;
+
+    try nodeApiCall(node_api.napi_get_cb_info, .{ env, info, &argc, &args, null, null });
+    if (argc < args_type_info.@"struct".fields.len) {
+        _ = node_api.napi_throw_type_error(env, null, "Wrong number of arguments");
+        return null;
+    }
+
+    var func_args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
+    inline for (args_type_info.@"struct".fields, 0..) |field, i| {
+        func_args[i] = try getValue(field.type, env, args[i]);
+    }
+
+    const res = @call(.auto, func, func_args);
+
+    return try createValue(func_type_info.Return, res, env);
+}
+
+pub fn nodeCall(comptime func: anytype) fn (node_api.napi_env, node_api.napi_callback_info) NodeError!node_api.napi_value {
+    return struct {
+        fn call(env: node_api.napi_env, info: node_api.napi_callback_info) NodeError!node_api.napi_value {
+            return genericNodeCall(func, env, info);
+        }
+    }.call;
 }
