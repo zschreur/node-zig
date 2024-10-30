@@ -10,62 +10,54 @@ pub fn build(b: *std.Build) void {
     });
     const node_headers = node.path("include/node");
 
-    const lib = b.addStaticLibrary(.{
-        .name = "node-zig",
-        .root_source_file = b.path("src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    lib.addIncludePath(node_headers);
-    b.installArtifact(lib);
-
-    const lib_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    lib_unit_tests.addIncludePath(node_headers);
-
-    const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
-
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_lib_unit_tests.step);
-
-    const nodeAddon = b.addSharedLibrary(.{
-        .name = "addon",
-        .target = target,
-        .optimize = optimize,
-    });
-
-    nodeAddon.linker_allow_shlib_undefined = true;
-
-    nodeAddon.linkLibrary(lib);
-    nodeAddon.addIncludePath(node_headers);
-    nodeAddon.linkLibC();
-    const wf = b.addWriteFiles();
-
+    // Define shared library which will be the .node artifact
     {
-        const c_file_content =
-            \\#include <node_api.h>
-            \\#include <stdio.h>
-            \\
-            \\extern napi_value Init(napi_env env, napi_value exports);
-            \\
-            \\NAPI_MODULE(
-        // Separating it like this will allow the addon to be given a unique name
-        ++ "addon" ++ 
-            \\, Init)
-        ;
-
-        const f = wf.add("addon.c", c_file_content);
-        nodeAddon.addCSourceFile(.{
-            .file = f,
-            .flags = &.{ "-Wall", "-fPIC" },
+        const lib = b.addSharedLibrary(.{
+            .name = "node-zig",
+            .root_source_file = b.path("src/root.zig"),
+            .target = target,
+            .optimize = optimize,
         });
+
+        lib.addIncludePath(node_headers);
+        {
+            const wf = b.addWriteFiles();
+            const c_file_content =
+                \\#include <node_api.h>
+                \\#include <stdio.h>
+                \\
+                \\extern napi_value Init(napi_env env, napi_value exports);
+                \\
+                \\NAPI_MODULE(
+                // Separating it like this will allow the addon to be given a unique name
+            ++ "node-zig" ++
+                \\, Init)
+            ;
+
+            const f = wf.add("node-zig.c", c_file_content);
+            lib.addCSourceFile(.{
+                .file = f,
+                .flags = &.{ "-Wall", "-fPIC" },
+            });
+        }
+        lib.linker_allow_shlib_undefined = true;
+
+        b.getInstallStep()
+            .dependOn(&b.addInstallArtifact(lib, .{ .dest_sub_path = "node-zig.node" }).step);
     }
 
-    b.getInstallStep()
-        .dependOn(&b.addInstallArtifact(nodeAddon, .{ .dest_sub_path = "addon.node" }).step);
+    // Define unit tests for the library
+    {
+        const lib_unit_tests = b.addTest(.{
+            .root_source_file = b.path("src/root.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        lib_unit_tests.addIncludePath(node_headers);
+
+        const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
+
+        const test_step = b.step("test", "Run unit tests");
+        test_step.dependOn(&run_lib_unit_tests.step);
+    }
 }
