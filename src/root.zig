@@ -1,3 +1,4 @@
+const std = @import("std");
 const node_api = @cImport({
     @cInclude("node_api.h");
 });
@@ -9,7 +10,7 @@ const napi_value = node_api.napi_value;
 
 fn declareNapiMethod(
     name: anytype,
-    func: fn (napi_env, napi_callback_info) node.NodeError!napi_value,
+    func: fn (napi_env, napi_callback_info) anyerror!napi_value,
 ) node_api.napi_property_descriptor {
     const method = struct {
         fn method(e: napi_env, i: napi_callback_info) callconv(.C) napi_value {
@@ -47,11 +48,17 @@ fn addOne(a: f64) f64 {
     return a + 1;
 }
 
+fn hello(s: [:0]const u8) !void {
+    const stdout = std.io.getStdOut().writer();
+    try stdout.print("Hello, {s}!\n", .{s});
+}
+
 export fn init(env: napi_env, exports: napi_value) napi_value {
     // see: https://nodejs.org/api/n-api.html#napi_property_descriptor
     var props = [_]node_api.napi_property_descriptor{
         declareNapiMethod("add", node.nodeCall(add)),
         declareNapiMethod("addOne", node.nodeCall(addOne)),
+        declareNapiMethod("hello", node.nodeCall(hello)),
     };
 
     node.nodeApiCall(node_api.napi_define_properties, .{ env, exports, props.len, &props }) catch |err| {

@@ -74,7 +74,35 @@ fn getNumber(comptime T: type, env: node_api.napi_env, arg: node_api.napi_value)
     return res;
 }
 
-pub fn getValue(comptime T: type, env: node_api.napi_env, arg: node_api.napi_value) NodeError!T {
+fn nodeStringSize(env: node_api.napi_env, arg: node_api.napi_value) !usize {
+    var string_size: usize = 0;
+    try nodeApiCall(node_api.napi_get_value_string_utf8, .{
+        env,
+        arg,
+        null,
+        0,
+        &string_size,
+    });
+
+    return string_size;
+}
+
+fn getNodeString(allocator: anytype, env: node_api.napi_env, arg: node_api.napi_value) ![:0]u8 {
+    var string_size = try nodeStringSize(env, arg);
+
+    const memory = try allocator.allocSentinel(u8, string_size, 0);
+    try nodeApiCall(node_api.napi_get_value_string_utf8, .{
+        env,
+        arg,
+        memory,
+        memory.len + 1, // 1 must be added to include the sentinel byte
+        &string_size,
+    });
+
+    return memory;
+}
+
+pub fn getValue(comptime T: type, env: node_api.napi_env, arg: node_api.napi_value, allocator: anytype) !T {
     var res: T = undefined;
     switch (T) {
         f64, i32, u32, i64, i128 => {
@@ -82,6 +110,10 @@ pub fn getValue(comptime T: type, env: node_api.napi_env, arg: node_api.napi_val
         },
         bool => {
             try nodeApiCall(node_api.napi_get_value_bool, .{ env, arg, &res });
+        },
+        [:0]const u8, [:0]u8 => {
+            const val = try getNodeString(allocator, env, arg);
+            res = val;
         },
         else => @compileError(@typeName(T) ++ " is not implemented for getValue"),
     }
@@ -99,6 +131,9 @@ pub fn createValue(comptime T: type, value: T, env: node_api.napi_env) NodeError
         },
         bool => {
             try nodeApiCall(node_api.napi_get_boolean, .{ env, value, &res });
+        },
+        void => {
+            try nodeApiCall(node_api.napi_get_undefined, .{ env, &res });
         },
         else => @compileError(@typeName(T) ++ " is not implemented for createValue"),
     }
@@ -130,17 +165,26 @@ fn genericNodeCall(comptime func: anytype, env: node_api.napi_env, info: node_ap
         return null;
     }
 
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
     var func_args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
     inline for (args_type_info.@"struct".fields, 0..) |field, i| {
-        func_args[i] = try getValue(field.type, env, args[i]);
+        func_args[i] = try getValue(field.type, env, args[i], allocator);
     }
 
-    const res = @call(.auto, func, func_args);
-
-    return try createValue(func_type_info.Return, res, env);
+    if (@typeInfo(func_type_info.Return) != .error_union) {
+        const res = @call(.auto, func, func_args);
+        return try createValue(func_type_info.Return, res, env);
+    } else {
+        const Payload = @typeInfo(func_type_info.Return).error_union.payload;
+        const res = try @call(.auto, func, func_args);
+        return try createValue(Payload, res, env);
+    }
 }
 
-const NodeFunction = fn (node_api.napi_env, node_api.napi_callback_info) NodeError!node_api.napi_value;
+const NodeFunction = fn (node_api.napi_env, node_api.napi_callback_info) anyerror!node_api.napi_value;
 pub fn nodeCall(comptime func: anytype) NodeFunction {
     const NodeReturn = ReturnType(NodeFunction);
 
