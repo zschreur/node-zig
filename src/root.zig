@@ -47,7 +47,7 @@ fn addOne(a: f64) f64 {
     return a + 1;
 }
 
-export fn Init(env: napi_env, exports: napi_value) napi_value {
+export fn init(env: napi_env, exports: napi_value) napi_value {
     // see: https://nodejs.org/api/n-api.html#napi_property_descriptor
     var props = [_]node_api.napi_property_descriptor{
         declareNapiMethod("add", node.nodeCall(add)),

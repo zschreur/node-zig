@@ -26,12 +26,12 @@ pub fn build(b: *std.Build) void {
                 \\#include <node_api.h>
                 \\#include <stdio.h>
                 \\
-                \\extern napi_value Init(napi_env env, napi_value exports);
+                \\extern napi_value init(napi_env env, napi_value exports);
                 \\
                 \\NAPI_MODULE(
                 // Separating it like this will allow the addon to be given a unique name
             ++ "node-zig" ++
-                \\, Init)
+                \\, init)
             ;
 
             const f = wf.add("node-zig.c", c_file_content);
