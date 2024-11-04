@@ -61,7 +61,7 @@ pub fn nodeApiCall(func: anytype, args: anytype) NodeError!void {
     }
 }
 
-fn getNumber(comptime T: type, env: node_api.napi_env, arg: node_api.napi_value) !T {
+fn getNodeNumber(comptime T: type, env: node_api.napi_env, arg: node_api.napi_value) !T {
     var res: T = undefined;
     switch (T) {
         f64 => try nodeApiCall(node_api.napi_get_value_double, .{ env, arg, &res }),
@@ -87,7 +87,7 @@ fn nodeStringSize(env: node_api.napi_env, arg: node_api.napi_value) !usize {
     return string_size;
 }
 
-fn getNodeString(allocator: anytype, env: node_api.napi_env, arg: node_api.napi_value) ![:0]u8 {
+fn getNodeString(allocator: std.mem.Allocator, env: node_api.napi_env, arg: node_api.napi_value) ![:0]u8 {
     var string_size = try nodeStringSize(env, arg);
 
     const memory = try allocator.allocSentinel(u8, string_size, 0);
@@ -102,21 +102,19 @@ fn getNodeString(allocator: anytype, env: node_api.napi_env, arg: node_api.napi_
     return memory;
 }
 
-pub fn getValue(comptime T: type, env: node_api.napi_env, arg: node_api.napi_value, allocator: anytype) !T {
-    var res: T = undefined;
-    switch (T) {
-        f64, i32, u32, i64, i128 => {
-            res = try getNumber(T, env, arg);
-        },
-        bool => {
-            try nodeApiCall(node_api.napi_get_value_bool, .{ env, arg, &res });
-        },
-        [:0]const u8, [:0]u8 => {
-            const val = try getNodeString(allocator, env, arg);
-            res = val;
-        },
+fn getNodeBool(env: node_api.napi_env, arg: node_api.napi_value) !bool {
+    var res: bool = undefined;
+    try nodeApiCall(node_api.napi_get_value_bool, .{ env, arg, &res });
+    return res;
+}
+
+pub fn getValue(comptime T: type, env: node_api.napi_env, arg: node_api.napi_value, allocator: std.mem.Allocator) !T {
+    const res = switch (T) {
+        f64, i32, u32, i64, i128 => try getNodeNumber(T, env, arg),
+        bool => try getNodeBool(env, arg),
+        [:0]const u8, [:0]u8 => try getNodeString(allocator, env, arg),
         else => @compileError(@typeName(T) ++ " is not implemented for getValue"),
-    }
+    };
     return res;
 }
 
