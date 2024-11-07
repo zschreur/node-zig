@@ -1,5 +1,5 @@
 const std = @import("std");
-const node_api = @cImport({
+const c = @cImport({
     @cInclude("node_api.h");
 });
 
@@ -33,50 +33,50 @@ pub fn nodeApiCall(func: anytype, args: anytype) NodeError!void {
     const status = @call(.auto, func, args);
     switch (status) {
         // see: https://nodejs.org/api/n-api.html#napi_status
-        node_api.napi_ok => return {},
-        node_api.napi_invalid_arg => return NodeError.napi_invalid_arg,
-        node_api.napi_object_expected => return NodeError.napi_object_expected,
-        node_api.napi_string_expected => return NodeError.napi_string_expected,
-        node_api.napi_name_expected => return NodeError.napi_name_expected,
-        node_api.napi_function_expected => return NodeError.napi_function_expected,
-        node_api.napi_number_expected => return NodeError.napi_number_expected,
-        node_api.napi_boolean_expected => return NodeError.napi_boolean_expected,
-        node_api.napi_array_expected => return NodeError.napi_array_expected,
-        node_api.napi_generic_failure => return NodeError.napi_generic_failure,
-        node_api.napi_pending_exception => return NodeError.napi_pending_exception,
-        node_api.napi_cancelled => return NodeError.napi_cancelled,
-        node_api.napi_escape_called_twice => return NodeError.napi_escape_called_twice,
-        node_api.napi_handle_scope_mismatch => return NodeError.napi_handle_scope_mismatch,
-        node_api.napi_callback_scope_mismatch => return NodeError.napi_callback_scope_mismatch,
-        node_api.napi_queue_full => return NodeError.napi_queue_full,
-        node_api.napi_closing => return NodeError.napi_closing,
-        node_api.napi_bigint_expected => return NodeError.napi_bigint_expected,
-        node_api.napi_date_expected => return NodeError.napi_date_expected,
-        node_api.napi_arraybuffer_expected => return NodeError.napi_arraybuffer_expected,
-        node_api.napi_detachable_arraybuffer_expected => return NodeError.napi_detachable_arraybuffer_expected,
-        node_api.napi_would_deadlock => return NodeError.napi_would_deadlock, // unused
-        node_api.napi_no_external_buffers_allowed => return NodeError.napi_no_external_buffers_allowed,
-        node_api.napi_cannot_run_js => return NodeError.napi_cannot_run_js,
+        c.napi_ok => return {},
+        c.napi_invalid_arg => return NodeError.napi_invalid_arg,
+        c.napi_object_expected => return NodeError.napi_object_expected,
+        c.napi_string_expected => return NodeError.napi_string_expected,
+        c.napi_name_expected => return NodeError.napi_name_expected,
+        c.napi_function_expected => return NodeError.napi_function_expected,
+        c.napi_number_expected => return NodeError.napi_number_expected,
+        c.napi_boolean_expected => return NodeError.napi_boolean_expected,
+        c.napi_array_expected => return NodeError.napi_array_expected,
+        c.napi_generic_failure => return NodeError.napi_generic_failure,
+        c.napi_pending_exception => return NodeError.napi_pending_exception,
+        c.napi_cancelled => return NodeError.napi_cancelled,
+        c.napi_escape_called_twice => return NodeError.napi_escape_called_twice,
+        c.napi_handle_scope_mismatch => return NodeError.napi_handle_scope_mismatch,
+        c.napi_callback_scope_mismatch => return NodeError.napi_callback_scope_mismatch,
+        c.napi_queue_full => return NodeError.napi_queue_full,
+        c.napi_closing => return NodeError.napi_closing,
+        c.napi_bigint_expected => return NodeError.napi_bigint_expected,
+        c.napi_date_expected => return NodeError.napi_date_expected,
+        c.napi_arraybuffer_expected => return NodeError.napi_arraybuffer_expected,
+        c.napi_detachable_arraybuffer_expected => return NodeError.napi_detachable_arraybuffer_expected,
+        c.napi_would_deadlock => return NodeError.napi_would_deadlock, // unused
+        c.napi_no_external_buffers_allowed => return NodeError.napi_no_external_buffers_allowed,
+        c.napi_cannot_run_js => return NodeError.napi_cannot_run_js,
         else => unreachable,
     }
 }
 
-fn getNodeNumber(comptime T: type, env: node_api.napi_env, arg: node_api.napi_value) !T {
+fn getNodeNumber(comptime T: type, env: c.napi_env, arg: c.napi_value) !T {
     var res: T = undefined;
     switch (T) {
-        f64 => try nodeApiCall(node_api.napi_get_value_double, .{ env, arg, &res }),
-        i32 => try nodeApiCall(node_api.napi_get_value_int32, .{ env, arg, &res }),
-        u32 => try nodeApiCall(node_api.napi_get_value_uint32, .{ env, arg, &res }),
-        i64 => try nodeApiCall(node_api.napi_get_value_int64, .{ env, arg, &res }),
+        f64 => try nodeApiCall(c.napi_get_value_double, .{ env, arg, &res }),
+        i32 => try nodeApiCall(c.napi_get_value_int32, .{ env, arg, &res }),
+        u32 => try nodeApiCall(c.napi_get_value_uint32, .{ env, arg, &res }),
+        i64 => try nodeApiCall(c.napi_get_value_int64, .{ env, arg, &res }),
         else => @compileError(@typeName(T) ++ " is not implemented for getNumber"),
     }
 
     return res;
 }
 
-fn nodeStringSize(env: node_api.napi_env, arg: node_api.napi_value) !usize {
+fn nodeStringSize(env: c.napi_env, arg: c.napi_value) !usize {
     var string_size: usize = 0;
-    try nodeApiCall(node_api.napi_get_value_string_utf8, .{
+    try nodeApiCall(c.napi_get_value_string_utf8, .{
         env,
         arg,
         null,
@@ -87,11 +87,11 @@ fn nodeStringSize(env: node_api.napi_env, arg: node_api.napi_value) !usize {
     return string_size;
 }
 
-fn getNodeString(allocator: std.mem.Allocator, env: node_api.napi_env, arg: node_api.napi_value) ![:0]u8 {
+fn getNodeString(allocator: std.mem.Allocator, env: c.napi_env, arg: c.napi_value) ![:0]u8 {
     var string_size = try nodeStringSize(env, arg);
 
     const memory = try allocator.allocSentinel(u8, string_size, 0);
-    try nodeApiCall(node_api.napi_get_value_string_utf8, .{
+    try nodeApiCall(c.napi_get_value_string_utf8, .{
         env,
         arg,
         memory,
@@ -102,13 +102,13 @@ fn getNodeString(allocator: std.mem.Allocator, env: node_api.napi_env, arg: node
     return memory;
 }
 
-fn getNodeBool(env: node_api.napi_env, arg: node_api.napi_value) !bool {
+fn getNodeBool(env: c.napi_env, arg: c.napi_value) !bool {
     var res: bool = undefined;
-    try nodeApiCall(node_api.napi_get_value_bool, .{ env, arg, &res });
+    try nodeApiCall(c.napi_get_value_bool, .{ env, arg, &res });
     return res;
 }
 
-pub fn getValue(comptime T: type, env: node_api.napi_env, arg: node_api.napi_value, allocator: std.mem.Allocator) !T {
+pub fn getValue(comptime T: type, env: c.napi_env, arg: c.napi_value, allocator: std.mem.Allocator) !T {
     const res = switch (T) {
         f64, i32, u32, i64, i128 => try getNodeNumber(T, env, arg),
         bool => try getNodeBool(env, arg),
@@ -118,20 +118,20 @@ pub fn getValue(comptime T: type, env: node_api.napi_env, arg: node_api.napi_val
     return res;
 }
 
-pub fn createValue(comptime T: type, value: T, env: node_api.napi_env) NodeError!node_api.napi_value {
-    var res: node_api.napi_value = undefined;
+pub fn createValue(comptime T: type, value: T, env: c.napi_env) NodeError!c.napi_value {
+    var res: c.napi_value = undefined;
     switch (T) {
         f64 => {
-            try nodeApiCall(node_api.napi_create_double, .{ env, value, &res });
+            try nodeApiCall(c.napi_create_double, .{ env, value, &res });
         },
         i64 => {
-            try nodeApiCall(node_api.napi_create_int64, .{ env, value, &res });
+            try nodeApiCall(c.napi_create_int64, .{ env, value, &res });
         },
         bool => {
-            try nodeApiCall(node_api.napi_get_boolean, .{ env, value, &res });
+            try nodeApiCall(c.napi_get_boolean, .{ env, value, &res });
         },
         void => {
-            try nodeApiCall(node_api.napi_get_undefined, .{ env, &res });
+            try nodeApiCall(c.napi_get_undefined, .{ env, &res });
         },
         else => @compileError(@typeName(T) ++ " is not implemented for createValue"),
     }
@@ -150,16 +150,16 @@ fn getFuncTypeInfo(comptime func: anytype) struct { Args: type, Return: type } {
     return .{ .Args = Args, .Return = Return };
 }
 
-fn genericNodeCall(comptime func: anytype, env: node_api.napi_env, info: node_api.napi_callback_info) !node_api.napi_value {
+fn genericNodeCall(comptime func: anytype, env: c.napi_env, info: c.napi_callback_info) !c.napi_value {
     const func_type_info = getFuncTypeInfo(func);
 
     const args_type_info = @typeInfo(func_type_info.Args);
     var argc: usize = args_type_info.@"struct".fields.len;
-    var args: [args_type_info.@"struct".fields.len]node_api.napi_value = undefined;
+    var args: [args_type_info.@"struct".fields.len]c.napi_value = undefined;
 
-    try nodeApiCall(node_api.napi_get_cb_info, .{ env, info, &argc, &args, null, null });
+    try nodeApiCall(c.napi_get_cb_info, .{ env, info, &argc, &args, null, null });
     if (argc < args_type_info.@"struct".fields.len) {
-        _ = node_api.napi_throw_type_error(env, null, "Wrong number of arguments");
+        _ = c.napi_throw_type_error(env, null, "Wrong number of arguments");
         return null;
     }
 
@@ -182,12 +182,12 @@ fn genericNodeCall(comptime func: anytype, env: node_api.napi_env, info: node_ap
     }
 }
 
-const NodeFunction = fn (node_api.napi_env, node_api.napi_callback_info) anyerror!node_api.napi_value;
+const NodeFunction = fn (c.napi_env, c.napi_callback_info) anyerror!c.napi_value;
 pub fn nodeCall(comptime func: anytype) NodeFunction {
     const NodeReturn = ReturnType(NodeFunction);
 
     return struct {
-        fn call(env: node_api.napi_env, info: node_api.napi_callback_info) NodeReturn {
+        fn call(env: c.napi_env, info: c.napi_callback_info) NodeReturn {
             return genericNodeCall(func, env, info);
         }
     }.call;
