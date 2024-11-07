@@ -3,7 +3,7 @@ const c = @cImport({
     @cInclude("node_api.h");
 });
 
-pub const NodeError = error{
+const NodeError = error{
     napi_invalid_arg,
     napi_object_expected,
     napi_string_expected,
@@ -108,20 +108,101 @@ fn getNodeBool(env: c.napi_env, arg: c.napi_value) !bool {
     return res;
 }
 
-pub fn getValue(comptime T: type, env: c.napi_env, arg: c.napi_value, allocator: std.mem.Allocator) !T {
-    const res = switch (T) {
-        f64, i32, u32, i64, i128 => try getNodeNumber(T, env, arg),
-        bool => try getNodeBool(env, arg),
+
+fn getTypedArray(T: type, env: c.napi_env, arg: c.napi_value, length: ?comptime_int) !if (length) |l| [l]T else ([]T) {
+    var is_typed_array: bool = undefined;
+    try nodeApiCall(c.napi_is_typedarray, .{ env, arg, &is_typed_array });
+
+    if (!is_typed_array) {
+        return error.ExpectedTypedArrayForValue;
+    }
+
+    const expected_array_type = switch (T) {
+        i8 => c.napi_int8_array,
+        u8 => c.napi_uint8_array,
+        // ? => c.napi_uint8_clamped_array
+        i16 => c.napi_int16_array,
+        u16 => c.napi_uint16_array,
+        i32 => c.napi_int32_array,
+        u32 => c.napi_uint32_array,
+        f32 => c.napi_float32_array,
+        f64 => c.napi_float64_array,
+        i64 => c.napi_bigint64_array,
+        u64 => c.napi_biguint64_array,
+        else => {
+            @compileError("getTypedArray is not implemented for " ++ @typeName(T));
+        },
+    };
+
+    var typedarray_type: c.napi_typedarray_type = undefined;
+    var actual_length: usize = length orelse 0;
+    var data: [*]T = undefined;
+    try nodeApiCall(c.napi_get_typedarray_info, .{
+        env,
+        arg,
+        &typedarray_type,
+        &actual_length,
+        @as(*?*anyopaque, @alignCast(@ptrCast(&data))),
+        null, // arraybuffer
+        null, // byte_offset
+    });
+
+    if (typedarray_type != expected_array_type) {
+        return error.IncorrectTypedArrayType;
+    }
+
+    if (length) |l| {
+        if (l != actual_length) {
+            return error.ExpectedFixedLengthArray;
+        }
+    }
+
+    if (length) |l| {
+        return data[0..l].*;
+    } else {
+        return data[0..actual_length];
+    }
+}
+
+fn getNodeValueForZigArray(comptime ArrayType: std.builtin.Type.Array, env: c.napi_env, arg: c.napi_value) !@Type(std.builtin.Type{ .array = ArrayType }) {
+    return switch (@Type((std.builtin.Type{ .array = ArrayType }))) {
+        [ArrayType.len]ArrayType.child => getTypedArray(ArrayType.child, env, arg, ArrayType.len),
+        else => {
+            @compileError(@typeName(@Type((std.builtin.Type{ .array = ArrayType }))) ++ " is not implemented for getValue");
+        },
+    };
+}
+
+fn getNodeValueForPointer(comptime PointerType: std.builtin.Type.Pointer, env: c.napi_env, arg: c.napi_value, allocator: std.mem.Allocator) !@Type(std.builtin.Type{ .pointer = PointerType }) {
+    const T = @Type((std.builtin.Type{ .pointer = PointerType }));
+    return switch (T) {
+        []PointerType.child => getTypedArray(PointerType.child, env, arg, null),
         [:0]const u8, [:0]u8 => try getNodeString(allocator, env, arg),
-        else => @compileError(@typeName(T) ++ " is not implemented for getValue"),
+        else => {
+            @compileError(@typeName(T) ++ " is not implemented for getValue");
+        },
+    };
+}
+
+fn getValue(comptime T: type, env: c.napi_env, arg: c.napi_value, allocator: std.mem.Allocator) !T {
+    _ = &allocator;
+    const type_info = @typeInfo(T);
+    const res = switch (type_info) {
+        .float, .int => try getNodeNumber(T, env, arg),
+        .bool => try getNodeBool(env, arg),
+        .pointer => getNodeValueForPointer(type_info.pointer, env, arg, allocator),
+        .array => try getNodeValueForZigArray(type_info.array, env, arg),
+        else => {
+            @compileError(@typeName(T) ++ " is not implemented for getValue");
+        },
     };
     return res;
 }
 
-pub fn createValue(comptime T: type, value: T, env: c.napi_env) NodeError!c.napi_value {
+fn createValue(comptime T: type, value: T, env: c.napi_env) NodeError!c.napi_value {
     var res: c.napi_value = undefined;
     switch (T) {
-        f64 => {
+        f64, f32 => {
             try nodeApiCall(c.napi_create_double, .{ env, value, &res });
         },
         i64 => {
