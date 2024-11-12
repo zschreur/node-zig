@@ -150,45 +150,41 @@ fn getFuncTypeInfo(comptime func: anytype) struct { Args: type, Return: type } {
     return .{ .Args = Args, .Return = Return };
 }
 
-fn genericNodeCall(comptime func: anytype, env: c.napi_env, info: c.napi_callback_info) !c.napi_value {
-    const func_type_info = getFuncTypeInfo(func);
-
-    const args_type_info = @typeInfo(func_type_info.Args);
-    var argc: usize = args_type_info.@"struct".fields.len;
-    var args: [args_type_info.@"struct".fields.len]c.napi_value = undefined;
-
-    try nodeApiCall(c.napi_get_cb_info, .{ env, info, &argc, &args, null, null });
-    if (argc < args_type_info.@"struct".fields.len) {
-        _ = c.napi_throw_type_error(env, null, "Wrong number of arguments");
-        return null;
-    }
-
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    var func_args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
-    inline for (args_type_info.@"struct".fields, 0..) |field, i| {
-        func_args[i] = try getValue(field.type, env, args[i], allocator);
-    }
-
-    if (@typeInfo(func_type_info.Return) != .error_union) {
-        const res = @call(.auto, func, func_args);
-        return try createValue(func_type_info.Return, res, env);
-    } else {
-        const Payload = @typeInfo(func_type_info.Return).error_union.payload;
-        const res = try @call(.auto, func, func_args);
-        return try createValue(Payload, res, env);
-    }
-}
-
 const NodeFunction = fn (c.napi_env, c.napi_callback_info) anyerror!c.napi_value;
 pub fn nodeCall(comptime func: anytype) NodeFunction {
     const NodeReturn = ReturnType(NodeFunction);
 
     return struct {
         fn call(env: c.napi_env, info: c.napi_callback_info) NodeReturn {
-            return genericNodeCall(func, env, info);
+            const func_type_info = getFuncTypeInfo(func);
+
+            const args_type_info = @typeInfo(func_type_info.Args);
+            var argc: usize = args_type_info.@"struct".fields.len;
+            var args: [args_type_info.@"struct".fields.len]c.napi_value = undefined;
+
+            try nodeApiCall(c.napi_get_cb_info, .{ env, info, &argc, &args, null, null });
+            if (argc < args_type_info.@"struct".fields.len) {
+                _ = c.napi_throw_type_error(env, null, "Wrong number of arguments");
+                return null;
+            }
+
+            var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            defer arena.deinit();
+            const allocator = arena.allocator();
+
+            var func_args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
+            inline for (args_type_info.@"struct".fields, 0..) |field, i| {
+                func_args[i] = try getValue(field.type, env, args[i], allocator);
+            }
+
+            if (@typeInfo(func_type_info.Return) != .error_union) {
+                const res = @call(.auto, func, func_args);
+                return try createValue(func_type_info.Return, res, env);
+            } else {
+                const Payload = @typeInfo(func_type_info.Return).error_union.payload;
+                const res = try @call(.auto, func, func_args);
+                return try createValue(Payload, res, env);
+            }
         }
     }.call;
 }
