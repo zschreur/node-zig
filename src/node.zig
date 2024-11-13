@@ -114,7 +114,7 @@ fn getNodeBool(env: c.napi_env, arg: c.napi_value) !bool {
 }
 
 
-fn getTypedArray(T: type, env: c.napi_env, arg: c.napi_value, length: ?comptime_int) !if (length) |l| [l]T else ([]T) {
+fn getTypedArray(T: type, length: ?comptime_int, env: c.napi_env, arg: c.napi_value) !if (length) |l| [l]T else ([]T) {
     var is_typed_array: bool = undefined;
     try nodeApiCall(c.napi_is_typedarray, .{ env, arg, &is_typed_array });
 
@@ -158,11 +158,8 @@ fn getTypedArray(T: type, env: c.napi_env, arg: c.napi_value, length: ?comptime_
 
     if (length) |l| {
         if (l != actual_length) {
-            return error.ExpectedFixedLengthArray;
+            return error.IncorrectArrayLength;
         }
-    }
-
-    if (length) |l| {
         return data[0..l].*;
     } else {
         return data[0..actual_length];
@@ -171,7 +168,7 @@ fn getTypedArray(T: type, env: c.napi_env, arg: c.napi_value, length: ?comptime_
 
 fn getNodeValueForZigArray(comptime ArrayType: std.builtin.Type.Array, env: c.napi_env, arg: c.napi_value) !@Type(std.builtin.Type{ .array = ArrayType }) {
     return switch (@Type((std.builtin.Type{ .array = ArrayType }))) {
-        [ArrayType.len]ArrayType.child => getTypedArray(ArrayType.child, env, arg, ArrayType.len),
+        [ArrayType.len]ArrayType.child => getTypedArray(ArrayType.child, ArrayType.len, env, arg),
         else => {
             @compileError(@typeName(@Type((std.builtin.Type{ .array = ArrayType }))) ++ " is not implemented for getValue");
         },
@@ -181,7 +178,7 @@ fn getNodeValueForZigArray(comptime ArrayType: std.builtin.Type.Array, env: c.na
 fn getNodeValueForPointer(comptime PointerType: std.builtin.Type.Pointer, env: c.napi_env, arg: c.napi_value, allocator: std.mem.Allocator) !@Type(std.builtin.Type{ .pointer = PointerType }) {
     const T = @Type((std.builtin.Type{ .pointer = PointerType }));
     return switch (T) {
-        []PointerType.child => getTypedArray(PointerType.child, env, arg, null),
+        []PointerType.child => getTypedArray(PointerType.child, null, env, arg),
         [:0]const u8, [:0]u8 => try getNodeString(allocator, env, arg),
         else => {
             @compileError(@typeName(T) ++ " is not implemented for getValue");
@@ -190,7 +187,6 @@ fn getNodeValueForPointer(comptime PointerType: std.builtin.Type.Pointer, env: c
 }
 
 fn getValue(comptime T: type, env: c.napi_env, arg: c.napi_value, allocator: std.mem.Allocator) !T {
-    _ = &allocator;
     const type_info = @typeInfo(T);
     const res = switch (type_info) {
         .float, .int => try getNodeNumber(T, env, arg),
@@ -208,18 +204,10 @@ fn createValue(comptime T: type, value: T, env: c.napi_env) NodeError!c.napi_val
     const type_info = @typeInfo(T);
     var res: c.napi_value = undefined;
     switch (type_info) {
-        .int => {
-            try nodeApiCall(c.napi_create_int64, .{ env, value, &res });
-        },
-        .float => {
-            try nodeApiCall(c.napi_create_double, .{ env, value, &res });
-        },
-        .bool => {
-            try nodeApiCall(c.napi_get_boolean, .{ env, value, &res });
-        },
-        .void => {
-            try nodeApiCall(c.napi_get_undefined, .{ env, &res });
-        },
+        .int => try nodeApiCall(c.napi_create_int64, .{ env, value, &res }),
+        .float => try nodeApiCall(c.napi_create_double, .{ env, value, &res }),
+        .bool => try nodeApiCall(c.napi_get_boolean, .{ env, value, &res }),
+        .void => try nodeApiCall(c.napi_get_undefined, .{ env, &res }),
         else => @compileError(@typeName(T) ++ " is not implemented for createValue"),
     }
 
@@ -284,7 +272,7 @@ fn declareNapiMethod(
     const method = struct {
         fn method(e: c.napi_env, i: c.napi_callback_info) callconv(.C) c.napi_value {
             return func(e, i) catch |err| {
-                std.debug.dumpStackTrace(@errorReturnTrace().?.*);
+                // std.debug.dumpStackTrace(@errorReturnTrace().?.*);
                 nodeApiCall(c.napi_throw_error, .{
                     e,
                     null,

@@ -36,25 +36,10 @@ fn audiateMicObserverFastRms(squares: [100]f32) f32 {
 
 comptime {
     node.registerModule(&.{
-        .{
-            .name = "add",
-            .function = add,
-        },
-        .{
-            .name = "addOne",
-            .function = addOne,
-        },
-        .{
-            .name = "hello",
-            .function = hello,
-        },
-        .{
-            .name = "rms",
-            .function = rms,
-        },
-        .{
-            .name = "micRms",
-            .function = audiateMicObserverFastRms,
-        },
+        .{ .name = "add", .function = add },
+        .{ .name = "addOne", .function = addOne },
+        .{ .name = "hello", .function = hello },
+        .{ .name = "rms", .function = rms },
+        .{ .name = "micRms", .function = audiateMicObserverFastRms },
     });
 }
