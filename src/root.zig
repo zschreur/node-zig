@@ -41,7 +41,7 @@ fn add(a: f64, b: f64) f64 {
     return a + b;
 }
 
-fn addOne(a: f64) f64 {
+fn addOne(a: i64) i64 {
     return a + 1;
 }
 

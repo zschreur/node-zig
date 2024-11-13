@@ -62,14 +62,19 @@ pub fn nodeApiCall(func: anytype, args: anytype) NodeError!void {
 }
 
 fn getNodeNumber(comptime T: type, env: c.napi_env, arg: c.napi_value) !T {
-    var res: T = undefined;
-    switch (T) {
-        f64 => try nodeApiCall(c.napi_get_value_double, .{ env, arg, &res }),
-        i32 => try nodeApiCall(c.napi_get_value_int32, .{ env, arg, &res }),
-        u32 => try nodeApiCall(c.napi_get_value_uint32, .{ env, arg, &res }),
-        i64 => try nodeApiCall(c.napi_get_value_int64, .{ env, arg, &res }),
+    const res: T = switch (@typeInfo(T)) {
+        .float => blk: {
+            var x: f64 = undefined;
+            try nodeApiCall(c.napi_get_value_double, .{ env, arg, &x });
+            break :blk x;
+        },
+        .int => blk: {
+            var x: i64 = undefined;
+            try nodeApiCall(c.napi_get_value_int64, .{ env, arg, &x });
+            break :blk x;
+        },
         else => @compileError(@typeName(T) ++ " is not implemented for getNumber"),
-    }
+    };
 
     return res;
 }
@@ -200,22 +205,25 @@ fn getValue(comptime T: type, env: c.napi_env, arg: c.napi_value, allocator: std
 }
 
 fn createValue(comptime T: type, value: T, env: c.napi_env) NodeError!c.napi_value {
+    const type_info = @typeInfo(T);
     var res: c.napi_value = undefined;
-    switch (T) {
-        f64, f32 => {
-            try nodeApiCall(c.napi_create_double, .{ env, value, &res });
-        },
-        i64 => {
+    switch (type_info) {
+        .int => {
+            // Note that if the number is larger than 2**53 - 1 then it will lose precision
             try nodeApiCall(c.napi_create_int64, .{ env, value, &res });
         },
-        bool => {
+        .float => {
+            try nodeApiCall(c.napi_create_double, .{ env, value, &res });
+        },
+        .bool => {
             try nodeApiCall(c.napi_get_boolean, .{ env, value, &res });
         },
-        void => {
+        .void => {
             try nodeApiCall(c.napi_get_undefined, .{ env, &res });
         },
         else => @compileError(@typeName(T) ++ " is not implemented for createValue"),
     }
+
     return res;
 }
 
