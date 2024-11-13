@@ -20,26 +20,6 @@ pub fn build(b: *std.Build) void {
         });
 
         lib.addIncludePath(node_headers);
-        {
-            const wf = b.addWriteFiles();
-            const c_file_content =
-                \\#include <node_api.h>
-                \\#include <stdio.h>
-                \\
-                \\extern napi_value init(napi_env env, napi_value exports);
-                \\
-                \\NAPI_MODULE(
-                // Separating it like this will allow the addon to be given a unique name
-            ++ "node-zig" ++
-                \\, init)
-            ;
-
-            const f = wf.add("node-zig.c", c_file_content);
-            lib.addCSourceFile(.{
-                .file = f,
-                .flags = &.{ "-Wall", "-fPIC" },
-            });
-        }
         lib.linker_allow_shlib_undefined = true;
 
         b.getInstallStep()

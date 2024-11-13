@@ -71,7 +71,7 @@ fn audiateMicObserverFastRms(squares: [100]f32) f32 {
     return std.math.sqrt(@reduce(.Add, v * v) / 100);
 }
 
-export fn init(env: c.napi_env, exports: c.napi_value) c.napi_value {
+fn init(env: c.napi_env, exports: c.napi_value) callconv(.C) c.napi_value {
     // see: https://nodejs.org/api/n-api.html#napi_property_descriptor
     var props = [_]c.napi_property_descriptor{
         declareNapiMethod("add", node.nodeCall(add)),
@@ -86,4 +86,11 @@ export fn init(env: c.napi_env, exports: c.napi_value) c.napi_value {
     };
 
     return exports;
+}
+
+comptime {
+    @export(&init, .{
+        .name = std.fmt.comptimePrint("napi_register_module_v{d}", .{c.NAPI_MODULE_VERSION}),
+        .linkage = .strong,
+    });
 }
