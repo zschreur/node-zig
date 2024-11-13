@@ -29,7 +29,7 @@ const NodeError = error{
     napi_cannot_run_js,
 };
 
-pub fn nodeApiCall(func: anytype, args: anytype) NodeError!void {
+fn nodeApiCall(func: anytype, args: anytype) NodeError!void {
     const status = @call(.auto, func, args);
     switch (status) {
         // see: https://nodejs.org/api/n-api.html#napi_status
@@ -209,7 +209,6 @@ fn createValue(comptime T: type, value: T, env: c.napi_env) NodeError!c.napi_val
     var res: c.napi_value = undefined;
     switch (type_info) {
         .int => {
-            // Note that if the number is larger than 2**53 - 1 then it will lose precision
             try nodeApiCall(c.napi_create_int64, .{ env, value, &res });
         },
         .float => {
@@ -240,7 +239,7 @@ fn getFuncTypeInfo(comptime func: anytype) struct { Args: type, Return: type } {
 }
 
 const NodeFunction = fn (c.napi_env, c.napi_callback_info) anyerror!c.napi_value;
-pub fn nodeCall(comptime func: anytype) NodeFunction {
+fn nodeCall(comptime func: anytype) NodeFunction {
     const NodeReturn = ReturnType(NodeFunction);
 
     return struct {
@@ -276,4 +275,59 @@ pub fn nodeCall(comptime func: anytype) NodeFunction {
             }
         }
     }.call;
+}
+
+fn declareNapiMethod(
+    name: []const u8,
+    func: fn (c.napi_env, c.napi_callback_info) anyerror!c.napi_value,
+) c.napi_property_descriptor {
+    const method = struct {
+        fn method(e: c.napi_env, i: c.napi_callback_info) callconv(.C) c.napi_value {
+            return func(e, i) catch |err| {
+                std.debug.dumpStackTrace(@errorReturnTrace().?.*);
+                nodeApiCall(c.napi_throw_error, .{
+                    e,
+                    null,
+                    @errorName(err),
+                }) catch |unrecoverable_error| {
+                    @panic(@errorName(unrecoverable_error));
+                };
+
+                return null;
+            };
+        }
+    }.method;
+
+    return .{
+        .utf8name = @ptrCast(name),
+        .method = method,
+        .attributes = c.napi_default,
+        .name = null,
+        .getter = null,
+        .setter = null,
+        .value = null,
+        .data = null,
+    };
+}
+
+pub fn registerModule(comptime node_exports: anytype) void {
+    const init = struct {
+        fn init(env: c.napi_env, exports: c.napi_value) callconv(.C) c.napi_value {
+            var props: [node_exports.len]c.napi_property_descriptor = undefined;
+            inline for (node_exports, 0..) |e, i| {
+                props[i] = declareNapiMethod(e.name, nodeCall(e.function));
+            }
+
+            nodeApiCall(c.napi_define_properties, .{ env, exports, props.len, &props }) catch |err| {
+                @panic(@errorName(err));
+            };
+
+            return exports;
+        }
+    }.init;
+
+    @export(&init, .{
+        .name = std.fmt.comptimePrint("napi_register_module_v{d}", .{c.NAPI_MODULE_VERSION}),
+        .linkage = .strong,
+    });
 }
