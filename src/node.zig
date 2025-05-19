@@ -1,10 +1,11 @@
 const std = @import("std");
-const c = @cImport({
+const sleep = @import("./sleep.zig").sleep;
+pub const c = @cImport({
     @cInclude("node_api.h");
 });
 
 var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
-const general_purpose_allocator = gpa.allocator();
+pub const general_purpose_allocator = gpa.allocator();
 
 const NodeError = error{
     napi_invalid_arg,
@@ -32,7 +33,7 @@ const NodeError = error{
     napi_cannot_run_js,
 };
 
-fn checkStatus(status: c.napi_status) NodeError!void {
+pub fn checkStatus(status: c.napi_status) NodeError!void {
     switch (status) {
         // see: https://nodejs.org/api/n-api.html#napi_status
         c.napi_ok => return {},
@@ -63,7 +64,7 @@ fn checkStatus(status: c.napi_status) NodeError!void {
     }
 }
 
-fn nodeApiCall(func: anytype, args: anytype) NodeError!void {
+pub fn nodeApiCall(func: anytype, args: anytype) NodeError!void {
     const status = @call(.auto, func, args);
     return checkStatus(status);
 }
@@ -119,7 +120,6 @@ fn getNodeBool(env: c.napi_env, arg: c.napi_value) !bool {
     try nodeApiCall(c.napi_get_value_bool, .{ env, arg, &res });
     return res;
 }
-
 
 fn getTypedArray(T: type, length: ?comptime_int, env: c.napi_env, arg: c.napi_value) !if (length) |l| [l]T else ([]T) {
     var is_typed_array: bool = undefined;
@@ -193,13 +193,19 @@ fn getNodeValueForPointer(comptime PointerType: std.builtin.Type.Pointer, env: c
     };
 }
 
-fn getValue(comptime T: type, env: c.napi_env, arg: c.napi_value, allocator: std.mem.Allocator) !T {
+const GetValueOpts = struct {
+    env: c.napi_env,
+    arg: c.napi_value,
+    allocator: ?std.mem.Allocator = null,
+};
+
+pub fn getValue(comptime T: type, opts: GetValueOpts) !T {
     const type_info = @typeInfo(T);
     const res = switch (type_info) {
-        .float, .int => try getNodeNumber(T, env, arg),
-        .bool => try getNodeBool(env, arg),
-        .pointer => getNodeValueForPointer(type_info.pointer, env, arg, allocator),
-        .array => try getNodeValueForZigArray(type_info.array, env, arg),
+        .float, .int => try getNodeNumber(T, opts.env, opts.arg),
+        .bool => try getNodeBool(opts.env, opts.arg),
+        .pointer => getNodeValueForPointer(type_info.pointer, opts.env, opts.arg, opts.allocator.?),
+        .array => try getNodeValueForZigArray(type_info.array, opts.env, opts.arg),
         else => {
             @compileError(@typeName(T) ++ " is not implemented for getValue");
         },
@@ -257,7 +263,11 @@ fn nodeCall(comptime func: anytype) NodeFunction {
 
             var func_args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
             inline for (args_type_info.@"struct".fields, 0..) |field, i| {
-                func_args[i] = try getValue(field.type, env, args[i], allocator);
+                func_args[i] = try getValue(field.type, .{
+                    .env = env,
+                    .arg = args[i],
+                    .allocator = allocator,
+                });
             }
 
             if (@typeInfo(func_type_info.Return) != .error_union) {
@@ -308,10 +318,11 @@ fn declareNapiMethod(
 pub fn registerModule(comptime node_exports: anytype) void {
     const init = struct {
         fn init(env: c.napi_env, exports: c.napi_value) callconv(.C) c.napi_value {
-            var props: [node_exports.len]c.napi_property_descriptor = undefined;
+            var props: [node_exports.len + 1]c.napi_property_descriptor = undefined;
             inline for (node_exports, 0..) |e, i| {
                 props[i] = declareNapiMethod(e.name, nodeCall(e.function));
             }
+            props[props.len - 1] = declareNapiMethod("sleep", sleep);
 
             nodeApiCall(c.napi_define_properties, .{ env, exports, props.len, &props }) catch |err| {
                 @panic(@errorName(err));
