@@ -29,8 +29,7 @@ const NodeError = error{
     napi_cannot_run_js,
 };
 
-fn nodeApiCall(func: anytype, args: anytype) NodeError!void {
-    const status = @call(.auto, func, args);
+fn checkStatus(status: c.napi_status) NodeError!void {
     switch (status) {
         // see: https://nodejs.org/api/n-api.html#napi_status
         c.napi_ok => return {},
@@ -59,6 +58,11 @@ fn nodeApiCall(func: anytype, args: anytype) NodeError!void {
         c.napi_cannot_run_js => return NodeError.napi_cannot_run_js,
         else => unreachable,
     }
+}
+
+fn nodeApiCall(func: anytype, args: anytype) NodeError!void {
+    const status = @call(.auto, func, args);
+    return checkStatus(status);
 }
 
 fn getNodeNumber(comptime T: type, env: c.napi_env, arg: c.napi_value) !T {
