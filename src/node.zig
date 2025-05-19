@@ -3,6 +3,9 @@ const c = @cImport({
     @cInclude("node_api.h");
 });
 
+var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+const general_purpose_allocator = gpa.allocator();
+
 const NodeError = error{
     napi_invalid_arg,
     napi_object_expected,
@@ -248,7 +251,7 @@ fn nodeCall(comptime func: anytype) NodeFunction {
                 return null;
             }
 
-            var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            var arena = std.heap.ArenaAllocator.init(general_purpose_allocator);
             defer arena.deinit();
             const allocator = arena.allocator();
 
